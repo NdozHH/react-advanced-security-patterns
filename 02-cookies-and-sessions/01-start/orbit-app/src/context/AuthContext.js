@@ -1,66 +1,63 @@
-import React, { createContext, useState } from 'react';
-import { useHistory } from 'react-router-dom';
+import React, { createContext, useEffect, useState, useContext } from "react";
+import { useHistory } from "react-router-dom";
+import { FetchContext } from "./FetchContext";
 
 const AuthContext = createContext();
 const { Provider } = AuthContext;
 
 const AuthProvider = ({ children }) => {
   const history = useHistory();
-
-  const token = localStorage.getItem('token');
-  const userInfo = localStorage.getItem('userInfo');
-  const expiresAt = localStorage.getItem('expiresAt');
+  const fetchContext = useContext(FetchContext);
 
   const [authState, setAuthState] = useState({
-    token,
-    expiresAt,
-    userInfo: userInfo ? JSON.parse(userInfo) : {}
+    userInfo: null,
+    isAuthenticated: false,
   });
 
-  const setAuthInfo = ({ token, userInfo, expiresAt }) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem(
-      'userInfo',
-      JSON.stringify(userInfo)
-    );
-    localStorage.setItem('expiresAt', expiresAt);
+  useEffect(() => {
+    const getUserInfo = async () => {
+      try {
+        const { data } = await fetchContext.authAxios.get("/user-info");
+        setAuthState({
+          userInfo: data.user,
+          isAuthenticated: true,
+        });
+      } catch (error) {
+        setAuthState({
+          userInfo: {},
+          isAuthenticated: false,
+        });
+      }
+    };
+    getUserInfo();
+  }, [fetchContext]);
 
+  const setAuthInfo = ({ userInfo }) => {
     setAuthState({
-      token,
       userInfo,
-      expiresAt
+      isAuthenticated: userInfo && userInfo._id ? true : false,
     });
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('userInfo');
-    localStorage.removeItem('expiresAt');
-    setAuthState({});
-    history.push('/login');
-  };
-
-  const isAuthenticated = () => {
-    if (!authState.token || !authState.expiresAt) {
-      return false;
+  const logout = async () => {
+    try {
+      await fetchContext.authAxios.post("/logout");
+      setAuthState({
+        userInfo: {},
+        isAuthenticated: false,
+      });
+      history.push("/login");
+    } catch (error) {
+      console.log(error);
     }
-    return (
-      new Date().getTime() / 1000 < authState.expiresAt
-    );
-  };
-
-  const isAdmin = () => {
-    return authState.userInfo.role === 'admin';
   };
 
   return (
     <Provider
       value={{
         authState,
-        setAuthState: authInfo => setAuthInfo(authInfo),
+        setAuthState: (authInfo) => setAuthInfo(authInfo),
         logout,
-        isAuthenticated,
-        isAdmin
       }}
     >
       {children}

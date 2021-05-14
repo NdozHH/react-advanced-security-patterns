@@ -1,36 +1,39 @@
-import React, { createContext, useContext } from 'react';
-import axios from 'axios';
-import { AuthContext } from './AuthContext';
+import React, { createContext, useEffect } from "react";
+import axios from "axios";
 
 const FetchContext = createContext();
 const { Provider } = FetchContext;
 
 const FetchProvider = ({ children }) => {
-  const authContext = useContext(AuthContext);
-
-  const authAxios = axios.create({
-    baseURL: process.env.REACT_APP_API_URL
+  const publicAxios = axios.create({
+    baseURL: process.env.REACT_APP_API_URL,
   });
 
-  authAxios.interceptors.request.use(
-    config => {
-      config.headers.Authorization = `Bearer ${authContext.authState.token}`;
-      return config;
-    },
-    error => {
-      return Promise.reject(error);
-    }
-  );
+  const authAxios = axios.create({
+    baseURL: process.env.REACT_APP_API_URL,
+  });
+
+  useEffect(() => {
+    const getCsrfToken = async () => {
+      try {
+        const { data } = await publicAxios.get("/csrf-token");
+        publicAxios.defaults.headers["X-CSRF-Token"] = data.csrfToken;
+        authAxios.defaults.headers["X-CSRF-Token"] = data.csrfToken;
+      } catch (error) {
+        console.log(error);
+      }
+    };
+    getCsrfToken();
+  }, []);
 
   authAxios.interceptors.response.use(
-    response => {
+    (response) => {
       return response;
     },
-    error => {
-      const code =
-        error && error.response ? error.response.status : 0;
+    (error) => {
+      const code = error && error.response ? error.response.status : 0;
       if (code === 401 || code === 403) {
-        console.log('error code', code);
+        console.log("error code", code);
       }
       return Promise.reject(error);
     }
@@ -39,7 +42,8 @@ const FetchProvider = ({ children }) => {
   return (
     <Provider
       value={{
-        authAxios
+        publicAxios,
+        authAxios,
       }}
     >
       {children}

@@ -1,37 +1,36 @@
-import React, { useState, useContext } from 'react';
-import { Form, Formik } from 'formik';
-import * as Yup from 'yup';
-import Card from '../components/common/Card';
-import Hyperlink from './../components/common/Hyperlink';
-import Label from './../components/common/Label';
-import FormInput from './../components/FormInput';
-import FormSuccess from './../components/FormSuccess';
-import FormError from './../components/FormError';
-import GradientBar from './../components/common/GradientBar';
-import { AuthContext } from '../context/AuthContext';
-import { publicFetch } from './../util/fetch';
-import { Redirect } from 'react-router-dom';
-import GradientButton from '../components/common/GradientButton';
-import logo from './../images/logo.png';
+import React, { useState, useContext } from "react";
+import { Form, Formik } from "formik";
+import * as Yup from "yup";
+import Card from "../components/common/Card";
+import Hyperlink from "./../components/common/Hyperlink";
+import Label from "./../components/common/Label";
+import FormInput from "./../components/FormInput";
+import FormSuccess from "./../components/FormSuccess";
+import FormError from "./../components/FormError";
+import GradientBar from "./../components/common/GradientBar";
+import { AuthContext } from "../context/AuthContext";
+import { FetchContext } from "../context/FetchContext";
+import { Redirect } from "react-router-dom";
+import GradientButton from "../components/common/GradientButton";
+import logo from "./../images/logo.png";
 
 const LoginSchema = Yup.object().shape({
-  email: Yup.string().required('Email is required'),
-  password: Yup.string().required('Password is required')
+  email: Yup.string().required("Email is required"),
+  password: Yup.string().required("Password is required"),
 });
 
 const Login = () => {
   const authContext = useContext(AuthContext);
+  const fetchContext = useContext(FetchContext);
   const [loginSuccess, setLoginSuccess] = useState();
   const [loginError, setLoginError] = useState();
-  const [redirectOnLogin, setRedirectOnLogin] = useState(
-    false
-  );
+  const [redirectOnLogin, setRedirectOnLogin] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
 
-  const submitCredentials = async credentials => {
+  const submitCredentials = async (credentials) => {
     try {
       setLoginLoading(true);
-      const { data } = await publicFetch.post(
+      const { data } = await fetchContext.publicAxios.post(
         `authenticate`,
         credentials
       );
@@ -67,32 +66,23 @@ const Login = () => {
                   Log in to your account
                 </h2>
                 <p className="text-gray-600 text-center">
-                  Don't have an account?{' '}
-                  <Hyperlink
-                    to="signup"
-                    text="Sign up now"
-                  />
+                  Don't have an account?{" "}
+                  <Hyperlink to="signup" text="Sign up now" />
                 </p>
               </div>
 
               <Formik
                 initialValues={{
-                  email: '',
-                  password: ''
+                  email: "",
+                  password: "",
                 }}
-                onSubmit={values =>
-                  submitCredentials(values)
-                }
+                onSubmit={(values) => submitCredentials(values)}
                 validationSchema={LoginSchema}
               >
                 {() => (
                   <Form className="mt-8">
-                    {loginSuccess && (
-                      <FormSuccess text={loginSuccess} />
-                    )}
-                    {loginError && (
-                      <FormError text={loginError} />
-                    )}
+                    {loginSuccess && <FormSuccess text={loginSuccess} />}
+                    {loginError && <FormError text={loginError} />}
                     <div>
                       <div className="mb-2">
                         <div className="mb-1">

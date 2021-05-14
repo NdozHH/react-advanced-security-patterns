@@ -1,324 +1,319 @@
-require('dotenv').config();
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const jwt = require('express-jwt');
-const jwtDecode = require('jwt-decode');
-const mongoose = require('mongoose');
+require("dotenv").config();
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const mongoose = require("mongoose");
 
-const dashboardData = require('./data/dashboard');
-const User = require('./data/User');
-const InventoryItem = require('./data/InventoryItem');
+const session = require("express-session");
+const csurf = require("csurf");
+const cookieParser = require("cookie-parser");
 
-const {
-  createToken,
-  hashPassword,
-  verifyPassword
-} = require('./util');
+const dashboardData = require("./data/dashboard");
+const User = require("./data/User");
+const InventoryItem = require("./data/InventoryItem");
+
+const FileStore = require("session-file-store")(session);
+const { hashPassword, verifyPassword } = require("./util");
 
 const app = express();
 
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(
+  session({
+    store: new FileStore({}),
+    secret: process.env.SESSION_SECRET,
+    saveUninitialized: false,
+    resave: false,
+    rolling: true,
+    cookie: {
+      httpOnly: true,
+      sameSite: true,
+      secure: process.env.NODE_ENV === "production" ? true : false,
+      maxAge: parseInt(process.env.SESSION_MAX_AGE),
+    },
+  })
+);
 
-app.post('/api/authenticate', async (req, res) => {
+const csrfProtection = csurf({
+  cookie: true,
+});
+app.use(csrfProtection);
+
+app.get("/api/csrf-token", (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+app.use((req, res, next) => {
+  console.log(req.session);
+
+  next();
+});
+
+app.post("/api/authenticate", async (req, res) => {
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({
-      email
+      email,
     }).lean();
 
     if (!user) {
       return res.status(403).json({
-        message: 'Wrong email or password.'
+        message: "Wrong email or password.",
       });
     }
 
-    const passwordValid = await verifyPassword(
-      password,
-      user.password
-    );
+    const passwordValid = await verifyPassword(password, user.password);
 
     if (passwordValid) {
-      const { password, bio, ...rest } = user;
-      const userInfo = Object.assign({}, { ...rest });
+      const { _id, firstName, lastName, email, role } = user;
+      const userInfo = { _id, firstName, lastName, email, role };
 
-      const token = createToken(userInfo);
-
-      const decodedToken = jwtDecode(token);
-      const expiresAt = decodedToken.exp;
+      req.session.user = userInfo;
 
       res.json({
-        message: 'Authentication successful!',
-        token,
+        message: "Authentication successful!",
         userInfo,
-        expiresAt
       });
     } else {
       res.status(403).json({
-        message: 'Wrong email or password.'
+        message: "Wrong email or password.",
       });
     }
   } catch (err) {
     console.log(err);
-    return res
-      .status(400)
-      .json({ message: 'Something went wrong.' });
+    return res.status(400).json({ message: "Something went wrong." });
   }
 });
 
-app.post('/api/signup', async (req, res) => {
+app.post("/api/signup", async (req, res) => {
   try {
     const { email, firstName, lastName } = req.body;
 
-    const hashedPassword = await hashPassword(
-      req.body.password
-    );
+    const hashedPassword = await hashPassword(req.body.password);
 
     const userData = {
       email: email.toLowerCase(),
       firstName,
       lastName,
       password: hashedPassword,
-      role: 'admin'
+      role: "admin",
     };
 
     const existingEmail = await User.findOne({
-      email: userData.email
+      email: userData.email,
     }).lean();
 
     if (existingEmail) {
-      return res
-        .status(400)
-        .json({ message: 'Email already exists' });
+      return res.status(400).json({ message: "Email already exists" });
     }
 
     const newUser = new User(userData);
     const savedUser = await newUser.save();
 
     if (savedUser) {
-      const token = createToken(savedUser);
-      const decodedToken = jwtDecode(token);
-      const expiresAt = decodedToken.exp;
-
-      const {
-        firstName,
-        lastName,
-        email,
-        role
-      } = savedUser;
+      const { _id, firstName, lastName, email, role } = savedUser;
 
       const userInfo = {
+        _id,
         firstName,
         lastName,
         email,
-        role
+        role,
       };
 
+      req.session.user = userInfo;
+
       return res.json({
-        message: 'User created!',
-        token,
+        message: "User created!",
         userInfo,
-        expiresAt
       });
     } else {
       return res.status(400).json({
-        message: 'There was a problem creating your account'
+        message: "There was a problem creating your account",
       });
     }
   } catch (err) {
     return res.status(400).json({
-      message: 'There was a problem creating your account'
+      message: "There was a problem creating your account",
     });
   }
 });
 
-const attachUser = (req, res, next) => {
-  const token = req.headers.authorization;
-  if (!token) {
-    return res
-      .status(401)
-      .json({ message: 'Authentication invalid' });
-  }
-  const decodedToken = jwtDecode(token.slice(7));
-
-  if (!decodedToken) {
-    return res.status(401).json({
-      message: 'There was a problem authorizing the request'
-    });
-  } else {
-    req.user = decodedToken;
-    next();
-  }
-};
-
-app.use(attachUser);
-
-const requireAuth = jwt({
-  secret: process.env.JWT_SECRET,
-  audience: 'api.orbit',
-  issuer: 'api.orbit'
-});
-
-const requireAdmin = (req, res, next) => {
-  const { role } = req.user;
-  if (role !== 'admin') {
-    return res
-      .status(401)
-      .json({ message: 'Insufficient role' });
+const requireAuth = (req, res, next) => {
+  const { user } = req.session;
+  if (!user) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
   next();
 };
 
-app.get('/api/dashboard-data', requireAuth, (req, res) =>
+const requireAdmin = (req, res, next) => {
+  const { user } = req.session;
+  if (user.role !== "admin") {
+    return res.status(401).json({ message: "Insufficient role" });
+  }
+  next();
+};
+
+app.get("/api/user-info", (req, res) => {
+  const { user } = req.session;
+  if (!user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  setTimeout(() => {
+    res.json({ user });
+  }, 1000);
+});
+
+app.post("/api/logout", requireAuth, (req, res) => {
+  req.session.destroy((error) => {
+    if (error) {
+      return res
+        .status(400)
+        .json({ message: "There was a problem logging out." });
+    }
+    res.json({ message: "Logout successful" });
+  });
+});
+
+app.get("/api/dashboard-data", requireAuth, (req, res) =>
   res.json(dashboardData)
 );
 
-app.patch('/api/user-role', async (req, res) => {
+app.patch("/api/user-role", async (req, res) => {
   try {
     const { role } = req.body;
-    const allowedRoles = ['user', 'admin'];
+    const allowedRoles = ["user", "admin"];
 
     if (!allowedRoles.includes(role)) {
-      return res
-        .status(400)
-        .json({ message: 'Role not allowed' });
+      return res.status(400).json({ message: "Role not allowed" });
     }
-    await User.findOneAndUpdate(
-      { _id: req.user.sub },
-      { role }
-    );
+    await User.findOneAndUpdate({ _id: req.user.sub }, { role });
     res.json({
       message:
-        'User role updated. You must log in again for the changes to take effect.'
+        "User role updated. You must log in again for the changes to take effect.",
     });
   } catch (err) {
     return res.status(400).json({ error: err });
   }
 });
 
-app.get(
-  '/api/inventory',
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const user = req.user.sub;
-      const inventoryItems = await InventoryItem.find({
-        user
-      });
-      res.json(inventoryItems);
-    } catch (err) {
-      return res.status(400).json({ error: err });
-    }
+app.get("/api/inventory", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { user } = req.session;
+    const inventoryItems = await InventoryItem.find({
+      user: user._id,
+    });
+    res.json(inventoryItems);
+  } catch (err) {
+    return res.status(400).json({ error: err });
   }
-);
+});
 
-app.post(
-  '/api/inventory',
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const userId = req.user.sub;
-      const input = Object.assign({}, req.body, {
-        user: userId
-      });
-      const inventoryItem = new InventoryItem(input);
-      await inventoryItem.save();
-      res.status(201).json({
-        message: 'Inventory item created!',
-        inventoryItem
-      });
-    } catch (err) {
-      return res.status(400).json({
-        message: 'There was a problem creating the item'
-      });
-    }
+app.post("/api/inventory", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { user } = req.session;
+    const input = Object.assign({}, req.body, {
+      user: user._id,
+    });
+    const inventoryItem = new InventoryItem(input);
+    await inventoryItem.save();
+    res.status(201).json({
+      message: "Inventory item created!",
+      inventoryItem,
+    });
+  } catch (err) {
+    return res.status(400).json({
+      message: "There was a problem creating the item",
+    });
   }
-);
+});
 
 app.delete(
-  '/api/inventory/:id',
+  "/api/inventory/:id",
   requireAuth,
   requireAdmin,
   async (req, res) => {
     try {
-      const deletedItem = await InventoryItem.findOneAndDelete(
-        { _id: req.params.id, user: req.user.sub }
-      );
+      const { user } = req.session;
+      const deletedItem = await InventoryItem.findOneAndDelete({
+        _id: req.params.id,
+        user: user._id,
+      });
       res.status(201).json({
-        message: 'Inventory item deleted!',
-        deletedItem
+        message: "Inventory item deleted!",
+        deletedItem,
       });
     } catch (err) {
       return res.status(400).json({
-        message: 'There was a problem deleting the item.'
+        message: "There was a problem deleting the item.",
       });
     }
   }
 );
 
-app.get('/api/users', requireAuth, async (req, res) => {
+app.get("/api/users", requireAuth, async (req, res) => {
   try {
     const users = await User.find()
       .lean()
-      .select('_id firstName lastName avatar bio');
+      .select("_id firstName lastName avatar bio");
 
     res.json({
-      users
+      users,
     });
   } catch (err) {
     return res.status(400).json({
-      message: 'There was a problem getting the users'
+      message: "There was a problem getting the users",
     });
   }
 });
 
-app.get('/api/bio', requireAuth, async (req, res) => {
+app.get("/api/bio", requireAuth, async (req, res) => {
   try {
-    const { sub } = req.user;
-    const user = await User.findOne({
-      _id: sub
+    const { user } = req.session;
+    const foundUser = await User.findOne({
+      _id: user._id,
     })
       .lean()
-      .select('bio');
+      .select("bio");
 
     res.json({
-      bio: user.bio
+      bio: foundUser.bio,
     });
   } catch (err) {
     return res.status(400).json({
-      message: 'There was a problem updating your bio'
+      message: "There was a problem updating your bio",
     });
   }
 });
 
-app.patch('/api/bio', requireAuth, async (req, res) => {
+app.patch("/api/bio", requireAuth, async (req, res) => {
   try {
-    const { sub } = req.user;
+    const { user } = req.session;
     const { bio } = req.body;
     const updatedUser = await User.findOneAndUpdate(
       {
-        _id: sub
+        _id: user._id,
       },
       {
-        bio
+        bio,
       },
       {
-        new: true
+        new: true,
       }
     );
 
     res.json({
-      message: 'Bio updated!',
-      bio: updatedUser.bio
+      message: "Bio updated!",
+      bio: updatedUser.bio,
     });
   } catch (err) {
     return res.status(400).json({
-      message: 'There was a problem updating your bio'
+      message: "There was a problem updating your bio",
     });
   }
 });
@@ -329,13 +324,13 @@ async function connect() {
     await mongoose.connect(process.env.ATLAS_URL, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      useFindAndModify: false
+      useFindAndModify: false,
     });
   } catch (err) {
-    console.log('Mongoose error', err);
+    console.log("Mongoose error", err);
   }
   app.listen(3001);
-  console.log('API listening on localhost:3001');
+  console.log("API listening on localhost:3001");
 }
 
 connect();
