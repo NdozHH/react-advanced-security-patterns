@@ -1,38 +1,25 @@
-import React, { useContext } from 'react';
-import { Link } from 'react-router-dom';
-import GradientLink from '../components/common/GradientLink';
-import GradientBar from './../components/common/GradientBar';
-import { AuthContext } from './../context/AuthContext';
-import logo from './../images/logo.png';
+import React from "react";
+import { useAuth0 } from "@auth0/auth0-react";
+import GradientLink from "../components/common/GradientLink";
+import GradientButton from "../components/common/GradientButton";
+import GradientBar from "./../components/common/GradientBar";
+import logo from "./../images/logo.png";
 
 const Home = () => {
-  const auth = useContext(AuthContext);
+  const { loginWithRedirect, isAuthenticated } = useAuth0();
 
   return (
     <>
       <GradientBar />
       <div className="w-full top-0 bg-white px-10 py-5">
         <div className="flex justify-between">
-          <img
-            className="w-32 h-full"
-            src={logo}
-            alt="Logo"
-          />
+          <img className="w-32 h-full" src={logo} alt="Logo" />
           <div className="flex items-center">
-            <Link
-              to="/signup"
-              className="text-blue-700 mr-6"
-            >
-              Sign Up
-            </Link>
-            <GradientLink
-              to={
-                auth.isAuthenticated()
-                  ? '/dashboard'
-                  : '/login'
-              }
-              text="Log In"
-            />
+            {isAuthenticated ? (
+              <GradientLink to="/dashboard" text="Go to dashboard" />
+            ) : (
+              <GradientButton onClick={loginWithRedirect} text="Login" />
+            )}
           </div>
         </div>
       </div>
@@ -53,15 +40,14 @@ const Home = () => {
               Take the pain out of managing your sales data
             </h2>
             <div className="mt-4 sm:mt-10 w-48">
-              <GradientLink
-                text="Get Started"
-                size="lg"
-                to={
-                  auth.isAuthenticated()
-                    ? '/dashboard'
-                    : '/login'
-                }
-              />
+              {isAuthenticated ? (
+                <GradientLink to="/dashboard" text="Go to dashboard" />
+              ) : (
+                <GradientButton
+                  onClick={loginWithRedirect}
+                  text="Get started"
+                />
+              )}
             </div>
           </div>
         </div>

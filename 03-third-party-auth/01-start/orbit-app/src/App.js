@@ -1,30 +1,26 @@
-import React, { lazy, Suspense, useContext } from 'react';
+import React, { lazy, Suspense } from "react";
+import { Auth0Provider, useAuth0 } from "@auth0/auth0-react";
 import {
   BrowserRouter as Router,
   Route,
   Switch,
-  Redirect
-} from 'react-router-dom';
-import './App.css';
+  Redirect,
+} from "react-router-dom";
+import "./App.css";
+import logo from "./images/logo.png";
 
-import {
-  AuthProvider,
-  AuthContext
-} from './context/AuthContext';
-import { FetchProvider } from './context/FetchContext';
+import { FetchProvider } from "./context/FetchContext";
 
-import AppShell from './AppShell';
+import AppShell from "./AppShell";
 
-import Home from './pages/Home';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import FourOFour from './pages/FourOFour';
+import Home from "./pages/Home";
+import FourOFour from "./pages/FourOFour";
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Inventory = lazy(() => import('./pages/Inventory'));
-const Account = lazy(() => import('./pages/Account'));
-const Settings = lazy(() => import('./pages/Settings'));
-const Users = lazy(() => import('./pages/Users'));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Account = lazy(() => import("./pages/Account"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Users = lazy(() => import("./pages/Users"));
 
 const LoadingFallback = () => (
   <AppShell>
@@ -34,12 +30,6 @@ const LoadingFallback = () => (
 
 const UnauthenticatedRoutes = () => (
   <Switch>
-    <Route path="/login">
-      <Login />
-    </Route>
-    <Route path="/signup">
-      <Signup />
-    </Route>
     <Route exact path="/">
       <Home />
     </Route>
@@ -50,28 +40,28 @@ const UnauthenticatedRoutes = () => (
 );
 
 const AuthenticatedRoute = ({ children, ...rest }) => {
-  const auth = useContext(AuthContext);
+  const { isAuthenticated } = useAuth0();
+
   return (
     <Route
       {...rest}
       render={() =>
-        auth.isAuthenticated() ? (
-          <AppShell>{children}</AppShell>
-        ) : (
-          <Redirect to="/" />
-        )
+        isAuthenticated ? <AppShell>{children}</AppShell> : <Redirect to="/" />
       }
     ></Route>
   );
 };
 
 const AdminRoute = ({ children, ...rest }) => {
-  const auth = useContext(AuthContext);
+  const { isAuthenticated, user } = useAuth0();
+  const roles = user[`https://app.orbit/roles`];
+  const isAdmin = roles[0] === "admin" ? true : false;
+
   return (
     <Route
       {...rest}
       render={() =>
-        auth.isAuthenticated() && auth.isAdmin() ? (
+        isAuthenticated && isAdmin ? (
           <AppShell>{children}</AppShell>
         ) : (
           <Redirect to="/" />
@@ -81,7 +71,22 @@ const AdminRoute = ({ children, ...rest }) => {
   );
 };
 
+const LoadingLogo = () => (
+  <div className="self-center">
+    <img className="w-32" src={logo} alt="Logo" />
+  </div>
+);
+
 const AppRoutes = () => {
+  const { isLoading } = useAuth0();
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex justify-center">
+        <LoadingLogo />
+      </div>
+    );
+  }
   return (
     <>
       <Suspense fallback={<LoadingFallback />}>
@@ -108,17 +113,34 @@ const AppRoutes = () => {
   );
 };
 
+const requestedScopes = [
+  "read:dashboard",
+  "read:inventory",
+  "write:inventory",
+  "edit:inventory",
+  "delete:inventory",
+  "read:users",
+  "read:user",
+  "edit:user",
+];
+
 function App() {
   return (
-    <Router>
-      <AuthProvider>
+    <Auth0Provider
+      domain={process.env.REACT_APP_AUTH0_DOMAIN}
+      clientId={process.env.REACT_APP_AUTH0_CLIENT_ID}
+      redirectUri={`${window.location.origin}/dashboard`}
+      audience={process.env.REACT_APP_AUTH0_AUDIENCE}
+      scope={requestedScopes.join(" ")}
+    >
+      <Router>
         <FetchProvider>
           <div className="bg-gray-100">
             <AppRoutes />
           </div>
         </FetchProvider>
-      </AuthProvider>
-    </Router>
+      </Router>
+    </Auth0Provider>
   );
 }
 

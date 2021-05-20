@@ -1,5 +1,5 @@
-import React, { useContext } from 'react';
-import { AuthContext } from './../context/AuthContext';
+import React, { useEffect, useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 
 const AuthStateItem = ({ title, value }) => (
   <div className="text-sm">
@@ -11,24 +11,33 @@ const AuthStateItem = ({ title, value }) => (
 );
 
 const AuthDebugger = () => {
-  const authContext = useContext(AuthContext);
-  const {
-    token,
-    expiresAt,
-    userInfo
-  } = authContext.authState;
+  const [accessToken, setAccessToken] = useState();
+
+  const { user, getAccessTokenSilently } = useAuth0();
+
+  useEffect(() => {
+    const getAccessToken = async () => {
+      try {
+        const token = await getAccessTokenSilently();
+
+        setAccessToken(token);
+      } catch (error) {
+        console.log(error);
+      }
+    };
+    getAccessToken();
+  }, [getAccessTokenSilently]);
+
   return (
     <section className="rounded-lg shadow bg-white p-4">
       <div className="mb-2">
-        <AuthStateItem title="Token" value={token} />
+        <AuthStateItem title="Token" value={accessToken} />
       </div>
-      <div className="mb-2">
-        <AuthStateItem title="Expiry" value={expiresAt} />
-      </div>
+
       <div className="mb-2">
         <AuthStateItem
           title="User Info"
-          value={JSON.stringify(userInfo, null, 2)}
+          value={JSON.stringify(user, null, 2)}
         />
       </div>
     </section>
